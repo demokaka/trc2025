@@ -1,0 +1,128 @@
+ARG CODE_VERSION=humble
+FROM osrf/ros:${CODE_VERSION}-desktop-full
+
+LABEL maintainer="LCIS_CO4SYS_TEAM"
+LABEL version="1.0.0"
+LABEL description="Minimal docker setup for simulation in ROS and Gazebo"
+LABEL contact="cong-khanh.dinh@lcis.grenoble-inp.fr"
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# make sure the shell used is /bin/bash
+SHELL ["/bin/bash","-c"]
+
+
+RUN apt-get update
+
+# Install essential packages for development
+RUN apt-get install -y \
+# net-tools package (includes ifconfig,... commands)
+net-tools \
+# iputils-ping package (includes ping,... commands)
+iputils-ping \
+git \
+nano \
+curl \
+wget \
+terminator \
+software-properties-common \
+build-essential \
+# python package
+python3 python3-pip 
+
+
+RUN apt install -y python-is-python3 
+RUN apt install -y cmake 
+RUN apt-get update
+RUN apt install -y vim
+# RUN apt install -y libboost-program-options-dev libusb-1.0-0-dev ros-jazzy-tf-transformations 
+# ros-jazzy-motion-capture-tracking
+# ros-jazzy-teleop-twist-keyboard
+
+
+# RUN pip3 install cflib transforms3d rowan nicegui Jinja2  --break-system-packages
+# RUN pip3 install bresenham --break-system-packages
+RUN pip install Jinja2
+
+# move to /root/ folder first
+WORKDIR /root/
+
+ARG REPO_CFFIRMWARE=https://github.com/demokaka/crazyflie-firmware.git
+ARG REPO_CFLIB=https://github.com/demokaka/crazyflie-lib-python.git
+ARG REPO_CFCLIENTS=https://github.com/demokaka/crazyflie-clients-python.git
+# clone repos
+RUN git clone --branch develop $REPO_CFFIRMWARE crazyflie-firmware && \
+    git clone --branch develop $REPO_CFLIB crazyflie-lib-python && \
+    git clone --branch develop $REPO_CFCLIENTS crazyflie-clients-python
+
+# install cffirmware
+RUN cd /root/crazyflie-firmware && \
+    git submodule update --init --recursive && \
+    cd /root/crazyflie-firmware/sitl_make && \
+    mkdir build && \
+    cd build && \
+    cmake .. && \
+    make all
+
+# Create a virtual environment in /root/venv and activate it (maybe make one for sitl and one for normal experiment)
+RUN apt install python3-venv -y
+RUN python3 -m venv /root/sitl_venv
+RUN python3 -m venv /root/venv
+
+RUN cd /root/crazyflie-lib-python && \
+    git fetch  && git pull 
+    
+# install cflib sitl and cfclient sitl
+RUN . /root/sitl_venv/bin/activate && \
+    pip install setuptools && \
+    pip install -e /root/crazyflie-lib-python && \
+    pip install -e /root/crazyflie-clients-python 
+
+# # install cfclient sitl
+# RUN . /root/sitl_venv/bin/activate && \
+#     pip install -e /root/crazyflie-clients-python 
+
+
+# install cflib 
+RUN . /root/venv/bin/activate && \
+    pip install cflib && \
+    pip install cfclient  
+
+# # install cfclient 
+# RUN . /root/venv/bin/activate && \
+#     pip install cfclient 
+
+# resolve problem with cfclient
+RUN apt install libxcb-xinerama0 -y
+RUN apt install libxcb-cursor0 -y
+
+# Source the ROS 2 and Gazebo entrypoint and virtual environment on startup
+# RUN echo "source /ros_entrypoint.sh" >> ~/.bashrc && \
+#     echo "source /root/sitl_venv/bin/activate" >> ~/.bashrc
+RUN echo "source /ros_entrypoint.sh" >> ~/.bashrc 
+
+# Setup the workspace for ROS2
+ARG WORKSPACE="/root/ros_ws"
+RUN mkdir -p $WORKSPACE/src
+RUN mkdir -p $WORKSPACE/build
+RUN mkdir -p $WORKSPACE/install
+RUN mkdir -p $WORKSPACE/log
+
+RUN mkdir -p $WORKSPACE/src/trc2025
+COPY ../crazyflie_lcis $WORKSPACE/src/trc2025/.
+COPY ../crazyflie_lcis_bringup $WORKSPACE/src/trc2025/.
+COPY ../crazyflie_lcis_description $WORKSPACE/src/trc2025/.
+COPY ../crazyflie_lcis_examples $WORKSPACE/src/trc2025/.
+COPY ../crazyflie_lcis_gazebo $WORKSPACE/src/trc2025/.
+
+# Set PATH to include the virtual environment and ROS 2 binaries
+# ENV PATH="/root/sitl_venv/bin:$PATH"
+# ENV PATH="/root/venv/bin:$PATH"
+
+WORKDIR /root/ros_ws
+
+RUN echo "source ~/ros_ws/install/setup.bash"
+
+
+ENTRYPOINT [ "/ros_entrypoint.sh" ]
+CMD [ "bash" ]
