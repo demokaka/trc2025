@@ -209,3 +209,5 @@ setup/cache*
 setup/src*
 
 .vscode
+
+doc/test
